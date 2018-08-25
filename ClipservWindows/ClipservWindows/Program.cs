@@ -30,6 +30,8 @@ namespace ClipservWindows
             deck.KeyStateChanged += Deck_KeyStateChanged;
 
             _quitEvent.WaitOne();
+            deck.SetBrightness(50);
+            deck.ShowLogo();
         }
 
         private static void Deck_ConnectionStateChanged(object sender, ConnectionEventArgs e)
@@ -84,14 +86,15 @@ namespace ClipservWindows
                         }
                         break;
                     case 11:
+                        //System.Windows.Clipboard
                         break;
                     case 14:
                         if (sender is IStreamDeck deck)
                         {
                             Console.WriteLine("-----------------------");
-                            for (byte i = 0; i < byte.MaxValue; i++)
+                            for (ushort i = 0; i <= byte.MaxValue; i++)
                             {
-                                deck.SetKeyBitmap(14, KeyBitmap.FromRGBColor(i, (byte)(byte.MaxValue - i), i));
+                                deck.SetKeyBitmap(14, KeyBitmap.FromRGBColor((byte)i, (byte)(byte.MaxValue - i), (byte)i));
                                 await Task.Delay(10);
                                 Console.WriteLine(i);
                             }
