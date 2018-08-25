@@ -1,6 +1,7 @@
 ﻿using StreamDeckSharp;
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -35,6 +36,8 @@ namespace Clipserv
 
         private System.Windows.Forms.NotifyIcon _notifyIcon;
 
+        private readonly ConcurrentQueue<ClipboardItem> _clipboardItems = new ConcurrentQueue<ClipboardItem>();
+
         public MainWindow()
         {
             InitializeComponent();
@@ -45,6 +48,8 @@ namespace Clipserv
             var deck = StreamDeck.OpenDevice();
             deck.SetBrightness(50);
             deck.ShowLogo();
+            _notifyIcon?.Icon?.Dispose();
+            _notifyIcon?.Dispose();
         }
 
         private void Deck_ConnectionStateChanged(object sender, ConnectionEventArgs e)
@@ -57,6 +62,8 @@ namespace Clipserv
                 }
             }
         }
+
+        private bool _shouldCaptureImage = false;
 
         private void Deck_KeyStateChanged(object sender, StreamDeckSharp.KeyEventArgs e)
         {
@@ -80,16 +87,32 @@ namespace Clipserv
                             mediaElement.Play();
                             return;
                         }
-                        if (e.Key == 5)
+                        //if (e.Key == 5)
+                        //{
+                        //    for (ushort i = 0; i <= byte.MaxValue; i++)
+                        //    {
+                        //        deck.SetKeyBitmap(5, KeyBitmap.FromRGBColor((byte)i, (byte)(byte.MaxValue - i), (byte)i));
+                        //        await Task.Delay(10);
+                        //    }
+                        //    return;
+                        //}
+                        if (e.Key > 4 && e.Key < 10)
                         {
-                            for (ushort i = 0; i <= byte.MaxValue; i++)
+                            try
                             {
-                                deck.SetKeyBitmap(5, KeyBitmap.FromRGBColor((byte)i, (byte)(byte.MaxValue - i), (byte)i));
-                                await Task.Delay(10);
+                                Clipboard.SetImage(_clipboardItems.Reverse().ElementAt(e.Key - 5).Bitmap);
+                                var inputSimulator = new InputSimulator();
+                                inputSimulator.Keyboard.ModifiedKeyStroke(VirtualKeyCode.LCONTROL, VirtualKeyCode.VK_V);
                             }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine(ex.Message);
+                            }
+                            return;
                         }
                         if (e.Key == 4)
                         {
+                            _shouldCaptureImage = true;
                             var inputSimulator = new InputSimulator();
                             var modifiers = new List<VirtualKeyCode>
                             {
@@ -99,17 +122,17 @@ namespace Clipserv
                             inputSimulator.Keyboard.ModifiedKeyStroke(modifiers, VirtualKeyCode.VK_S);
                             return;
                         }
-                        var imageFromClipboard = Clipboard.GetImage();
-                        if (imageFromClipboard != null)
-                        {
-                            var resizedImage = new TransformedBitmap(imageFromClipboard, new ScaleTransform(BUTTON_WIDTH / imageFromClipboard.PixelWidth, BUTTON_HEIGHT / imageFromClipboard.PixelHeight));
-                            var bitmapEncoder = new PngBitmapEncoder();
-                            bitmapEncoder.Frames.Add(BitmapFrame.Create(resizedImage));
-                            var imageStream = new MemoryStream();
-                            bitmapEncoder.Save(imageStream);
-                            var keybitmap = KeyBitmap.FromStream(imageStream);
-                            deck.SetKeyBitmap(e.Key, keybitmap);
-                        }
+                        //var imageFromClipboard = Clipboard.GetImage();
+                        //if (imageFromClipboard != null)
+                        //{
+                        //    var resizedImage = new TransformedBitmap(imageFromClipboard, new ScaleTransform(BUTTON_WIDTH / imageFromClipboard.PixelWidth, BUTTON_HEIGHT / imageFromClipboard.PixelHeight));
+                        //    var bitmapEncoder = new PngBitmapEncoder();
+                        //    bitmapEncoder.Frames.Add(BitmapFrame.Create(resizedImage));
+                        //    var imageStream = new MemoryStream();
+                        //    bitmapEncoder.Save(imageStream);
+                        //    var keybitmap = KeyBitmap.FromStream(imageStream);
+                        //    deck.SetKeyBitmap(e.Key, keybitmap);
+                        //}
                     }
                 }, null);
                 //switch (e.Key)
@@ -176,6 +199,8 @@ namespace Clipserv
             deck.SetKeyBitmap(0, bitmap);
             var bitmapSad = KeyBitmap.FromFile(@"Resources\trumpet.png");
             deck.SetKeyBitmap(1, bitmapSad);
+            var bitmapSnip = KeyBitmap.FromFile(@"Resources\snipping.png");
+            deck.SetKeyBitmap(4, bitmapSnip);
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -196,6 +221,49 @@ namespace Clipserv
             };
             ShowInTaskbar = false;
             _notifyIcon.MouseDoubleClick += _notifyIcon_MouseDoubleClick;
+
+            var windowClipboardManager = new ClipboardManager(this);
+            windowClipboardManager.ClipboardChanged += ClipboardChanged;
+        }
+
+        private void ClipboardChanged(object sender, EventArgs e)
+        {
+            if (_shouldCaptureImage)
+            {
+                var imageFromClipboard = Clipboard.GetImage();
+                if (imageFromClipboard != null)
+                {
+                    var resizedImage = new TransformedBitmap(imageFromClipboard, new ScaleTransform(BUTTON_WIDTH / imageFromClipboard.PixelWidth, BUTTON_HEIGHT / imageFromClipboard.PixelHeight));
+                    var bitmapEncoder = new PngBitmapEncoder();
+                    bitmapEncoder.Frames.Add(BitmapFrame.Create(resizedImage));
+                    var imageStream = new MemoryStream();
+                    bitmapEncoder.Save(imageStream);
+                    var keybitmap = KeyBitmap.FromStream(imageStream);
+
+                    var clipboardItem = new ClipboardItem()
+                    {
+                        Bitmap = imageFromClipboard,
+                        KeyBitmap = keybitmap
+                    };
+
+                    _clipboardItems.Enqueue(clipboardItem);
+                    while(_clipboardItems.Count > 5)
+                    {
+                        if (_clipboardItems.TryDequeue(out ClipboardItem item))
+                        {
+
+                        }
+                    }
+
+                    var deck = StreamDeck.OpenDevice();
+                    int i = 9;
+                    foreach (var clipItem in _clipboardItems)
+                    {
+                        deck.SetKeyBitmap(i--, clipItem.KeyBitmap);
+                    }
+                }
+                _shouldCaptureImage = false;
+            }
         }
 
         private void _notifyIcon_MouseDoubleClick(object sender, System.Windows.Forms.MouseEventArgs e)
